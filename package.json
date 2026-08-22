@@ -1,0 +1,10 @@
+{
+  "name": "dsh-railway-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auth reverse proxy in front of DeepSeek Harness (dsh web) for Railway",
+  "main": "server.js",
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  }
+}
