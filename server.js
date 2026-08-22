@@ -160,12 +160,27 @@ const proxy = httpProxy.createProxyServer({
 });
 
 // WebSockets must also pass the auth gate.
+// NOTE: this handler runs outside our request try/catch — a throw here would be an
+// uncaught exception and kill the whole container (observed as Railway's
+// "train has not arrived" while it restarts). Never let it throw.
 proxy.on('error', (err, req, res) => {
   console.error('[proxy] upstream error:', err.message);
-  if (res && res.writeHead) {
-    res.writeHead(502, { 'Content-Type': 'text/plain' });
-    res.end('dsh is starting up or unavailable — retry shortly');
+  if (!res || typeof res.writeHead !== 'function' || res.headersSent) {
+    // Response already streaming (or a raw socket): nothing safe to send.
+    if (res && typeof res.destroy === 'function') res.destroy();
+    return;
   }
+  res.writeHead(502, { 'Content-Type': 'text/plain' });
+  res.end('dsh is starting up or unavailable — retry shortly');
+});
+
+// Last-resort guards: log and keep the proxy alive rather than letting an
+// unexpected error take down the only public surface of the deployment.
+process.on('uncaughtException', (err) => {
+  console.error('[proxy] UNCAUGHT EXCEPTION (kept alive):', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[proxy] UNHANDLED REJECTION (kept alive):', err);
 });
 
 function readBody(req) {
