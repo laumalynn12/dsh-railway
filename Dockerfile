@@ -27,8 +27,8 @@ RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION
 # bake into the image. So: install into a staging dir at build time, then copy it
 # onto the volume at every boot IF the volume has no profile yet (start.sh).
 RUN DSH_HOME=/opt/dsh-defaults/.dsh HOME=/opt/dsh-defaults \
-    dsh plugin --profile web add @liustack/modsearch@5.9.0 \
- && DSH_HOME=/opt/dsh-defaults/.dsh dsh plugin --profile web list
+    dsh plugin --profile web add --workspace-root @liustack/modsearch@5.9.0 \
+ && DSH_HOME=/opt/dsh-defaults/.dsh dsh plugin --profile web list --depth 0
 
 WORKDIR /app
 COPY server.js package.json ./
