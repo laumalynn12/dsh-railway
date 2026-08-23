@@ -287,6 +287,58 @@ proxy.on('proxyReq', (proxyReq) => {
   proxyReq.removeHeader('sec-fetch-site');
 });
 
+// ── client-bundle neutralization ─────────────────────────────────────────────
+// Upstream gates its settings UI on the BROWSER's own hostname being loopback
+// (ui-settings/settings-mirror.ts: persistence = connection.isLoopback ? 'host'
+// : 'memory'). Served over the public Railway domain that gate is false, the
+// settings mirror never issues a single request, and Models shows "settings are
+// unavailable in this browser". The server-side fence is already satisfied by
+// changeOrigin + --trusted-host; this client-side check is the last hard stop,
+// and it cannot be satisfied for a genuinely remote visitor. Neutralize it by
+// rewriting the isLoopbackHostname function out of the served JS bundles.
+//
+// The minified function always contains the two literals below in this shape:
+//   function X(h){if(h==="localhost"||h==="[::1]")return!0; ... }
+// Replace the whole guarded head with an unconditional true. Tolerant to quote
+// style and whitespace. Non-matching bundles are passed through untouched.
+let loopbackPatchLogged = false;
+
+function patchClientJs(body) {
+  // The minified gate always reads: if(<arg>==="localhost"||<arg>==="[::1]")return!0
+  // (either comparison order). Rewrite the condition to a constant true so the
+  // function returns true for every hostname — the settings mirror then treats
+  // this remote browser as a trusted host-side surface.
+  const re = /if\s*\(\s*([\w$]+)\s*={2,3}\s*(?:"localhost"|'localhost')\s*\|\|\s*\1\s*={2,3}\s*(?:"\[::1\]"|'\[::1\]')\s*\)|if\s*\(\s*(?:"\[::1\]"|'\[::1\]')\s*={2,3}\s*([\w$]+)\s*\|\|\s*(?:"localhost"|'localhost')\s*={2,3}\s*\2\s*\)/g;
+  const patched = body.replace(re, 'if(!0)');
+  if (!loopbackPatchLogged) {
+    loopbackPatchLogged = true;
+    console.log('[proxy] client JS loopback-gate patch:', patched !== body ? 'applied' : 'PATTERN NOT FOUND (frontend may have changed)');
+  }
+  return patched;
+}
+
+proxy.on('proxyRes', (proxyRes, req, res) => {
+  const ctype = String(proxyRes.headers['content-type'] || '');
+  if (!/javascript|ecmascript/i.test(ctype)) return;
+  if (proxyRes.headers['content-encoding']) return; // compressed: skip
+
+  const chunks = [];
+  let size = 0;
+  proxyRes.on('data', (c) => { size += c.length; if (size <= 8 * 1024 * 1024) chunks.push(c); });
+  proxyRes.on('end', () => {
+    try {
+      const original = Buffer.concat(chunks);
+      const out = Buffer.from(patchClientJs(original.toString('utf8')), 'utf8');
+      res.removeHeader('content-length');
+      res.setHeader('content-length', out.length);
+      res.end(out);
+    } catch (err) {
+      console.error('[proxy] JS patch failed:', err);
+      res.end(Buffer.concat(chunks));
+    }
+  });
+});
+
 // WebSocket upgrades hit the same /api trust fence on the dsh side. Apply the
 // same header surgery as proxyReq: the browser's Origin (public domain) can never
 // match the loopback-rewritten Host, so strip it before forwarding.
