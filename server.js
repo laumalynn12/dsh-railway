@@ -47,7 +47,19 @@ let shuttingDown = false;
 
 function startDsh() {
   if (shuttingDown) return;
-  const child = spawn('dsh', ['web', '--no-open', '--host', DSH_HOST, '--port', String(DSH_PORT)], {
+  const args = ['web', '--no-open', '--host', DSH_HOST, '--port', String(DSH_PORT)];
+
+  // dsh's /api browser-trust fence refuses any Host that is not loopback or in its
+  // trustedHosts list. Our proxy rewrites Host to loopback (changeOrigin), but the
+  // browser's Origin header still carries the public domain, and the fence compares
+  // Origin against the (rewritten) Host authority — so declare the public domain
+  // trusted explicitly. Repeatable flag; port-less entry matches any port.
+  const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (publicDomain) {
+    args.push('--trusted-host', publicDomain);
+  }
+
+  const child = spawn('dsh', args, {
     env: {
       ...process.env,
       // dsh resolves its home from DSH_HOME; keep workspace stable under /data.
