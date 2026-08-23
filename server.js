@@ -273,6 +273,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// The browser's Origin header carries the public domain, but dsh's /api trust
+// fence compares Origin against the (loopback-rewritten) Host authority — which
+// never matches. Strip Origin/SecFetchSite before forwarding so the fence treats
+// these as non-browser requests: Host (loopback) passes and absent Origin is
+// explicitly allowed by api-request-trust.ts.
+proxy.on('proxyReq', (proxyReq) => {
+  proxyReq.removeHeader('origin');
+  proxyReq.removeHeader('sec-fetch-site');
+});
+
 server.on('upgrade', (req, socket, head) => {
   if (!verifySession(req)) {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
