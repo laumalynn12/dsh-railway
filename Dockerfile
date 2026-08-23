@@ -13,7 +13,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Install the pinned release globally so it survives volume mounts and is on PATH.
-RUN npm install -g --no-audit --no-fund "@deepseek-ai/dsh@${DSH_VERSION}"
+# pnpm is required by `dsh plugin` — profile plugins are managed as a pnpm project.
+RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION}"
 
 # Pre-install ModSearch into the web profile at build time so EVERY deployment gets
 # it by default: the plugin registers modsearch's engine chain as the web seam's
