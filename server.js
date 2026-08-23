@@ -28,9 +28,6 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 const COOKIE_NAME = 'dsh_session';
 
-// Rotate per boot — see header comment.
-const SECRET = crypto.randomBytes(32);
-
 let adminPassword = process.env.ADMIN_PASSWORD || '';
 if (!adminPassword) {
   adminPassword = crypto.randomBytes(16).toString('base64url');
@@ -38,6 +35,13 @@ if (!adminPassword) {
 } else {
   console.log('[proxy] ADMIN_PASSWORD set via environment');
 }
+
+// Derive the signing secret from the admin password instead of generating it
+// randomly per boot: Railway redeploys on every push, and a random secret would
+// invalidate every session each time (the SPA then gets HTML from /login instead
+// of JSON and shows cryptic client errors). Hashing keeps the important property:
+// changing ADMIN_PASSWORD still rotates all sessions.
+const SECRET = crypto.createHash('sha256').update(`dsh-railway:v1:${adminPassword}`).digest();
 
 // ── dsh child process ────────────────────────────────────────────────────────
 
