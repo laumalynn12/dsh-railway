@@ -5,9 +5,11 @@ set -e
 # expects up front so first-boot endpoints don't hit missing-dir errors.
 mkdir -p /data/.dsh /data/workspace
 
-# First boot on a fresh volume: copy the baked-in web profile (with ModSearch
-# pre-installed) so every deployment starts with working web search. A volume
-# that already has a profile is left untouched — user changes survive redeploys.
+# First boot on a fresh volume: copy the baked-in web profile (with ModSearch +
+# the dsh-web-ui suite: task board, Git graph, mobile remote UI, skins, plugin
+# market) so every deployment starts fully featured. A volume that already has a
+# profile is left untouched — user changes survive redeploys. To force a re-seed
+# after upgrading the image's defaults, delete /data/.dsh/profiles/web on the volume.
 if [ ! -d /data/.dsh/profiles/web ]; then
   echo "[start] seeding default web profile (incl. modsearch) from image"
   mkdir -p /data/.dsh/profiles

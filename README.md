@@ -68,3 +68,21 @@ Engines and keys live in `/data/.modsearch/config.json` inside the container —
 ask the agent to run `modsearch config set tavily.apiKey <key>` (or edit the
 file) to add Tavily/Exa/Firecrawl keys for higher quotas. Excluding engines:
 `modsearch config set <engine>.enabled false`.
+
+## Web UI suite (mobile, desktop, skins, plugin market)
+
+The image pre-installs [dsh-web-ui-all](https://github.com/zhu1090093659/dsh-web-ui)
+(`@linxin666/dsh-web-ui-all`), a curated bundle that adds:
+
+- **Task board** — persistent agent task management in the Web UI
+- **Git graph** — branch/commit visualization
+- **Right-side workbench panel** — files, terminal, Git ops
+- **Remote mobile UI** — phone-friendly remote control surface
+- **SSH operations** — manage SSH hosts from the UI
+- **Skin center** — five switchable themes
+- **Plugin manager + community plugin market** — browse and install more plugins from Settings
+- **Live token stats** — usage at a glance
+- **Image understanding** — describe-image tooling
+
+Everything works on mobile browsers, tablets, and desktops from the same URL — the
+UI is responsive, and the remote-web-ui module adds a dedicated phone layout.

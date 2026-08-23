@@ -28,6 +28,7 @@ RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION
 # onto the volume at every boot IF the volume has no profile yet (start.sh).
 RUN DSH_HOME=/opt/dsh-defaults/.dsh HOME=/opt/dsh-defaults \
     dsh plugin --profile web add --workspace-root @liustack/modsearch@5.9.0 \
+ && DSH_HOME=/opt/dsh-defaults/.dsh dsh plugin --profile web add --workspace-root @linxin666/dsh-web-ui-all@0.3.1 \
  && DSH_HOME=/opt/dsh-defaults/.dsh dsh plugin --profile web list --depth 0
 
 WORKDIR /app
