@@ -283,12 +283,23 @@ proxy.on('proxyReq', (proxyReq) => {
   proxyReq.removeHeader('sec-fetch-site');
 });
 
+// WebSocket upgrades hit the same /api trust fence on the dsh side. Apply the
+// same header surgery as proxyReq: the browser's Origin (public domain) can never
+// match the loopback-rewritten Host, so strip it before forwarding.
+
 server.on('upgrade', (req, socket, head) => {
   if (!verifySession(req)) {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
     socket.destroy();
     return;
   }
+
+  // Strip Origin/sec-fetch-site from the upgrade request before proxy.ws copies
+  // req.headers into its outgoing request. Mutating the inbound request here is
+  // safe: we own this socket, nobody reads these headers afterwards.
+  delete req.headers.origin;
+  delete req.headers['sec-fetch-site'];
+
   proxy.ws(req, socket, head);
 });
 
