@@ -56,3 +56,15 @@ Open `http://localhost:8080`, log in with `admin` / `changeme`.
 - The agent can execute shell commands inside the container. That is the product working as
   intended — treat the deployment as you would an SSH box.
 - Developer preview upstream: pin `DSH_VERSION` and expect breaking changes between versions.
+
+## Web search out of the box (ModSearch)
+
+The image pre-installs [@liustack/modsearch](https://github.com/liustack/modsearch)
+into the `web` profile. `web_search` runs on its keyless engine chain (Firecrawl
+keyless: 1,000 free credits/month, no signup), and the agent additionally gets
+`x_search` (X/Twitter) and `read_page` (structured page reading) tools.
+
+Engines and keys live in `/data/.modsearch/config.json` inside the container —
+ask the agent to run `modsearch config set tavily.apiKey <key>` (or edit the
+file) to add Tavily/Exa/Firecrawl keys for higher quotas. Excluding engines:
+`modsearch config set <engine>.enabled false`.

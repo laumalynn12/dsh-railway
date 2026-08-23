@@ -15,6 +15,20 @@ RUN apt-get update \
 # Install the pinned release globally so it survives volume mounts and is on PATH.
 RUN npm install -g --no-audit --no-fund "@deepseek-ai/dsh@${DSH_VERSION}"
 
+# Pre-install ModSearch into the web profile at build time so EVERY deployment gets
+# it by default: the plugin registers modsearch's engine chain as the web seam's
+# search provider (keyless Firecrawl out of the box, no API key needed) and adds
+# x_search + read_page tools. Users can still remove/override via their own
+# profile patches; this only sets the default state of a fresh volume.
+#
+# The profile must land on the VOLUME path (/data/.dsh/profiles/web) so it survives
+# redeploys — but a fresh Railway volume starts EMPTY and would shadow whatever we
+# bake into the image. So: install into a staging dir at build time, then copy it
+# onto the volume at every boot IF the volume has no profile yet (start.sh).
+RUN DSH_HOME=/opt/dsh-defaults/.dsh HOME=/opt/dsh-defaults \
+    dsh plugin --profile web add @liustack/modsearch@5.9.0 \
+ && DSH_HOME=/opt/dsh-defaults/.dsh dsh plugin --profile web list
+
 WORKDIR /app
 COPY server.js package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
