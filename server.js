@@ -157,6 +157,11 @@ const LOGIN_PAGE = `<!doctype html>
 const proxy = httpProxy.createProxyServer({
   target: `http://${DSH_HOST}:${DSH_PORT}`,
   ws: true,
+  // Rewrite Host to 127.0.0.1:3080. dsh's web bundle enforces a browser-trust fence
+  // keyed on the request's Host header; forwarding the public Railway domain verbatim
+  // makes every API call come back 403 ("transport failure"). Loopback is always
+  // trusted, so rewriting is the robust fix regardless of which domain serves traffic.
+  changeOrigin: true,
 });
 
 // WebSockets must also pass the auth gate.
