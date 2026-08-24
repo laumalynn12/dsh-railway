@@ -8,8 +8,10 @@ ENV DSH_VERSION=${DSH_VERSION}
 
 # tini = PID 1. dsh spawns tool subprocesses (bash, git, ...) that reparent and pile up
 # as zombies without an init; after weeks of uptime that exhausts the PID table.
+# python3/make/g++ = node-gyp toolchain, needed to compile native addons that some
+# web-ui plugins pull in (node-pty, cpu-features) — node:22-slim ships without them.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tini ca-certificates \
+ && apt-get install -y --no-install-recommends tini ca-certificates python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
 
 # Install the pinned release globally so it survives volume mounts and is on PATH.
