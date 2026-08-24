@@ -259,7 +259,15 @@ async function handleLocal(req, res) {
   return false; // not a local route → proxy it
 }
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer({
+  // Railway's edge downgrades browser HTTP/2 requests to HTTP/1.1 before
+  // forwarding to the container. That translation occasionally produces
+  // requests Node's strict parser rejects outright with a bare 400 — before
+  // the request ever reaches our handler (no [proxy]/[dsh] log line, just an
+  // instant 400 from the raw parser). Relaxing the parser fixes compatibility
+  // with proxies that don't emit perfectly conformant HTTP/1.1.
+  insecureHTTPParser: true,
+}, async (req, res) => {
   try {
     if (await handleLocal(req, res)) return;
 
@@ -381,6 +389,15 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[proxy] listening on 0.0.0.0:${PORT}, forwarding to ${DSH_HOST}:${DSH_PORT}`);
   startDsh();
+});
+
+// With insecureHTTPParser this should rarely fire, but log it if it does so a
+// raw-parse rejection is visible instead of silently returning 400 with no trace.
+server.on('clientError', (err, socket) => {
+  console.error('[proxy] client error (raw request rejected):', err.message);
+  if (socket.writable) {
+    socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+  }
 });
 
 process.on('SIGTERM', () => {
