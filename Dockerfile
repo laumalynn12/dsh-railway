@@ -31,12 +31,13 @@ RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION
 ENV DSH_HOME=/opt/dsh-defaults/.dsh \
     HOME=/opt/dsh-defaults
 
-# dsh-web-ui-all declares its ~11 sub-plugins as normal dependencies, but pnpm's
-# default isolated layout tucks scoped packages into nested node_modules instead
-# of hoisting them to the top level — so Node's ESM resolver can't find them at
-# runtime ("Cannot find package '@linxin666/dsh-client-ui-...'"). Force pnpm to
-# hoist that scope so the sub-plugins land where dsh's loader expects them.
-RUN pnpm config set public-hoist-pattern "@linxin666/*" --global
+# dsh-web-ui-all pulls in ~11 sub-plugins (some under @linxin666/*, some external
+# unscoped packages like dsh-better-sidebar) as normal dependencies, but pnpm's
+# default isolated layout tucks them into nested node_modules instead of hoisting
+# to the top level — so Node's ESM resolver can't find them at runtime
+# ("Cannot find package '...'"). Force full hoisted linking so every dependency
+# lands where dsh's loader expects it, regardless of scope.
+RUN pnpm config set node-linker hoisted --global
 
 RUN dsh plugin --profile web add --workspace-root @liustack/modsearch@5.9.0 \
  && dsh plugin --profile web add --workspace-root @linxin666/dsh-web-ui-all@0.2.0 \
