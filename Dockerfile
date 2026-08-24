@@ -30,7 +30,7 @@ ENV DSH_HOME=/opt/dsh-defaults/.dsh \
     HOME=/opt/dsh-defaults
 
 RUN dsh plugin --profile web add --workspace-root @liustack/modsearch@5.9.0 \
- && dsh plugin --profile web add --workspace-root @linxin666/dsh-web-ui-all@0.3.1 \
+ && dsh plugin --profile web add --workspace-root @linxin666/dsh-web-ui-all@0.2.0 \
  && dsh plugin --profile web list --depth 0
 
 WORKDIR /app
