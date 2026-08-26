@@ -69,20 +69,28 @@ ask the agent to run `modsearch config set tavily.apiKey <key>` (or edit the
 file) to add Tavily/Exa/Firecrawl keys for higher quotas. Excluding engines:
 `modsearch config set <engine>.enabled false`.
 
-## Web UI suite (mobile, desktop, skins, plugin market)
+## Adding profile plugins
 
-The image pre-installs [dsh-web-ui-all](https://github.com/zhu1090093659/dsh-web-ui)
-(`@linxin666/dsh-web-ui-all`), a curated bundle that adds:
+ModSearch is the only plugin installed by default. To add more:
 
-- **Task board** — persistent agent task management in the Web UI
-- **Git graph** — branch/commit visualization
-- **Right-side workbench panel** — files, terminal, Git ops
-- **Remote mobile UI** — phone-friendly remote control surface
-- **SSH operations** — manage SSH hosts from the UI
-- **Skin center** — five switchable themes
-- **Plugin manager + community plugin market** — browse and install more plugins from Settings
-- **Live token stats** — usage at a glance
-- **Image understanding** — describe-image tooling
+```bash
+dsh plugin --profile web add --workspace-root <package>@<version>
+```
 
-Everything works on mobile browsers, tablets, and desktops from the same URL — the
-UI is responsive, and the remote-web-ui module adds a dedicated phone layout.
+**Check the package's dependencies first:**
+
+```bash
+npm view <package> dependencies peerDependencies
+```
+
+A plugin that depends on `@deepseek-ai/*` will break the Web UI. Those packages pin
+harness internals with caret ranges over prereleases (`^0.1.0-rc.6`), and such a range
+does not match a newer prerelease like `0.1.1-rc.2` — so pnpm installs a second, older
+copy of harness internals into the profile, where it shadows the runtime the `dsh` CLI
+loads. An older `dsh-host-webserver` has no `renderIndex()`, so the SPA document route
+throws and **every page load returns a bare 400 with an empty body** (no error message
+anywhere in the logs). `@linxin666/dsh-web-ui-all@0.2.0` fails exactly this way.
+
+The Dockerfile fails the build if a profile plugin ever shadows a harness package, so
+this cannot reach a deploy unnoticed. Plugins with native addons (node-pty, cpu-features,
+ssh2) also need `python3 make g++` restored to the `apt-get install` line.

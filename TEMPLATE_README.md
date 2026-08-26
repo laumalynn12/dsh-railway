@@ -1,10 +1,10 @@
 # Deploy and Host DeepSeek Harness (dsh) on Railway
 
-DeepSeek Harness is an open-source agent runtime where "everything is a plugin" — a coding agent that lives on your server, executes real tasks with bash, file editing, and web access, and gets more capable the longer it runs. This template deploys it behind a password-protected reverse proxy, pre-loaded with ModSearch (keyless web search) and the dsh-web-ui suite.
+DeepSeek Harness is an open-source agent runtime where "everything is a plugin" — a coding agent that lives on your server, executes real tasks with bash, file editing, and web access, and gets more capable the longer it runs. This template deploys it behind a password-protected reverse proxy, pre-loaded with ModSearch for keyless web search.
 
 ## About Hosting DeepSeek Harness
 
-Hosting DeepSeek Harness on Railway gives you an always-on AI agent accessible from any browser — phone, tablet, or desktop. The template handles the two things dsh cannot do natively: binding to a public interface (dsh only accepts loopback) and authentication (a cookie-based login gate in front of the Web UI). A persistent volume keeps sessions, credentials, and memories across redeploys. ModSearch comes pre-installed so `web_search` works immediately via Firecrawl's keyless tier — no API keys required. The dsh-web-ui suite adds a task board, Git graph, mobile remote UI, skin center, and an in-app plugin market. Configure your model API key through the UI after deploy and start working.
+Hosting DeepSeek Harness on Railway gives you an always-on AI agent accessible from any browser — phone, tablet, or desktop. The template handles the two things dsh cannot do natively: binding to a public interface (dsh only accepts loopback) and authentication (a cookie-based login gate in front of the Web UI). A persistent volume keeps sessions, credentials, and memories across redeploys. ModSearch comes pre-installed so `web_search` works immediately via Firecrawl's keyless tier — no API keys required. Configure your model API key through the UI after deploy and start working.
 
 ## Common Use Cases
 

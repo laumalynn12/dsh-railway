@@ -317,9 +317,12 @@ function patchClientJs(body) {
   // function returns true for every hostname.
   const re = /if\s*\(\s*([\w$]+)\s*={2,3}\s*(?:"localhost"|'localhost')\s*\|\|\s*\1\s*={2,3}\s*(?:"\[::1\]"|'\[::1\]')\s*\)|if\s*\(\s*(?:"\[::1\]"|'\[::1\]')\s*={2,3}\s*([\w$]+)\s*\|\|\s*(?:"localhost"|'localhost')\s*={2,3}\s*\2\s*\)/g;
   const patched = body.replace(re, 'if(!0)');
-  if (!loopbackPatchLogged) {
+  // Log only the first bundle that actually carries the gate. Logging the first
+  // .js request instead reports "not found" for whichever asset happens to be
+  // fetched first, which says nothing about whether the patch works.
+  if (patched !== body && !loopbackPatchLogged) {
     loopbackPatchLogged = true;
-    console.log('[proxy] client JS loopback-gate patch:', patched !== body ? 'applied' : 'PATTERN NOT FOUND (frontend may have changed)');
+    console.log('[proxy] client JS loopback-gate patch: applied');
   }
   return patched;
 }

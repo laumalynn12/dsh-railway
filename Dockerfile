@@ -8,10 +8,11 @@ ENV DSH_VERSION=${DSH_VERSION}
 
 # tini = PID 1. dsh spawns tool subprocesses (bash, git, ...) that reparent and pile up
 # as zombies without an init; after weeks of uptime that exhausts the PID table.
-# python3/make/g++ = node-gyp toolchain, needed to compile native addons that some
-# web-ui plugins pull in (node-pty, cpu-features) — node:22-slim ships without them.
+# No node-gyp toolchain: the only profile plugin (modsearch) is pure JS. Adding a
+# plugin with native addons (node-pty, cpu-features, ssh2) means restoring
+# python3 make g++ here.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tini ca-certificates python3 make g++ \
+ && apt-get install -y --no-install-recommends tini ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Install the pinned release globally so it survives volume mounts and is on PATH.
@@ -31,17 +32,23 @@ RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION
 ENV DSH_HOME=/opt/dsh-defaults/.dsh \
     HOME=/opt/dsh-defaults
 
-# dsh-web-ui-all pulls in ~11 sub-plugins (some under @linxin666/*, some external
-# unscoped packages like dsh-better-sidebar) as normal dependencies, but pnpm's
-# default isolated layout tucks them into nested node_modules instead of hoisting
-# to the top level — so Node's ESM resolver can't find them at runtime
-# ("Cannot find package '...'"). Force full hoisted linking so every dependency
-# lands where dsh's loader expects it, regardless of scope.
-RUN pnpm config set node-linker hoisted --global
-
+# Only add profile plugins that declare NO @deepseek-ai/* dependency.
+# Third-party plugins pin harness internals with caret ranges on prereleases
+# (^0.1.0-rc.6), and a caret range over a prerelease does not match a newer
+# prerelease (0.1.1-rc.2) — so pnpm installs a SECOND, older copy of harness
+# internals into the profile, which shadows the runtime the `dsh` CLI loads.
+# An older dsh-host-webserver has no renderIndex(), so the SPA document route
+# throws and every page load answers a bare 400 with an empty body.
+# modsearch depends only on undici + commander, so it is safe.
+# Verify before adding anything here:
+#   npm view <pkg> dependencies peerDependencies
 RUN dsh plugin --profile web add --workspace-root @liustack/modsearch@5.9.0 \
- && dsh plugin --profile web add --workspace-root @linxin666/dsh-web-ui-all@0.2.0 \
  && dsh plugin --profile web list --depth 0
+
+# Fail the build if a profile plugin ever shadows a harness package again.
+RUN test -z "$(ls /opt/dsh-defaults/.dsh/profiles/web/node_modules/@deepseek-ai 2>/dev/null)" \
+ || { echo "FATAL: profile shadows @deepseek-ai packages (see comment above)"; \
+      ls /opt/dsh-defaults/.dsh/profiles/web/node_modules/@deepseek-ai; exit 1; }
 
 WORKDIR /app
 COPY server.js package.json ./
