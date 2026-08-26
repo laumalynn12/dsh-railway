@@ -51,7 +51,7 @@ RUN test -z "$(ls /opt/dsh-defaults/.dsh/profiles/web/node_modules/@deepseek-ai 
       ls /opt/dsh-defaults/.dsh/profiles/web/node_modules/@deepseek-ai; exit 1; }
 
 WORKDIR /app
-COPY server.js package.json ./
+COPY server.js mobile-settings.js package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 
 # Harness home + workspace live on the volume so sessions, credentials, and files

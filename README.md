@@ -19,7 +19,8 @@ Railway container
 ```
 
 The proxy restarts `dsh` if it crashes, streams its output into the Railway logs, and shuts it
-down cleanly on SIGTERM.
+down cleanly on SIGTERM. It also rewrites two response bodies in flight — see
+[Mobile settings layout](#mobile-settings-layout).
 
 ## Deploy
 
@@ -68,6 +69,29 @@ Engines and keys live in `/data/.modsearch/config.json` inside the container —
 ask the agent to run `modsearch config set tavily.apiKey <key>` (or edit the
 file) to add Tavily/Exa/Firecrawl keys for higher quotas. Excluding engines:
 `modsearch config set <engine>.enabled false`.
+
+## Mobile settings layout
+
+`mobile-settings.js` injects a stylesheet into the served `index.html` that makes the
+**Settings** panel usable on a phone. Upstream's settings shell
+(`packages/client/ui-settings-general/SettingsRoot.module.css`) has no `@media` rules at
+all: the panel is `width: 800px; max-width: calc(100vw - 48px)` and its nav rail is
+`width: 188px; flex: none`. On a 360px-wide screen the panel shrinks to ~312px, the rail
+still claims 188px, and ~124px is left for the content column — too narrow for rows whose
+label sits beside its control, so they spill over each other. Below 640px the stylesheet
+makes the panel a full-screen sheet, turns the rail into a horizontal tab strip, raises
+touch targets to 44px, and adds safe-area insets.
+
+Selectors are semantic rather than class-based, because the client build hashes CSS Module
+class names (`.panel` → `.panel_a1b2c`) and those change on every rebuild. The panel is
+matched by `[role="dialog"][aria-modal="true"][aria-labelledby]`, which is uniquely the
+settings panel — every other dialog in the app names itself with `aria-label` instead.
+That makes the injection independent of `DSH_VERSION`, and unlike a profile plugin it adds
+nothing to `node_modules`, so it cannot cause the shadowing failure described below.
+
+Run `node mobile-settings.test.js` after editing it. The stylesheet styles the settings
+*shell* only; individual sections keep their own grids, which fit once the rail stops
+reserving its 188px.
 
 ## Adding profile plugins
 

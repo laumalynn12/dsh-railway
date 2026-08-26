@@ -20,6 +20,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const httpProxy = require('http-proxy');
+const mobileSettings = require('./mobile-settings');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const DSH_PORT = parseInt(process.env.DSH_PORT || '3080', 10);
@@ -277,7 +278,7 @@ const server = http.createServer({
       return;
     }
 
-    if (handleJsAsset(req, res, new URL(req.url, 'http://x'))) return;
+    if (handleRewrite(req, res, new URL(req.url, 'http://x'))) return;
 
     proxy.web(req, res);
   } catch (err) {
@@ -331,14 +332,43 @@ function isJsAssetPath(pathname) {
   return pathname.endsWith('.js') || pathname.endsWith('.mjs');
 }
 
-// Buffered fetch-and-patch for JS assets. Returns true when the request was handled.
-function handleJsAsset(req, res, url) {
+// A document navigation, not an in-page fetch: only the browser's top-level
+// request asks for text/html. XHR/fetch send application/json and SSE sends
+// text/event-stream, so streaming endpoints are never considered here.
+function isDocumentRequest(req) {
+  return /text\/html/i.test(String(req.headers.accept || ''));
+}
+
+// Candidates for body rewriting. The request only makes us *look*; the
+// response content-type below decides whether we actually buffer, so a
+// navigation that turns out to serve a large download still streams through.
+function mayRewrite(req, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
-  if (!isJsAssetPath(url.pathname)) return false;
+  return isJsAssetPath(url.pathname) || isDocumentRequest(req);
+}
+
+// Pick the rewrite for a response content-type, or null to stream it untouched.
+function rewriterFor(ctype) {
+  if (/javascript|ecmascript/i.test(ctype)) return patchClientJs;
+  if (/text\/html/i.test(ctype)) return mobileSettings.injectInto;
+  return null;
+}
+
+// Fetch-and-patch. Returns true when the request was handled.
+function handleRewrite(req, res, url) {
+  if (!mayRewrite(req, url)) return false;
 
   const upstream = http.request(
     { host: DSH_HOST, port: DSH_PORT, path: url.pathname + url.search, method: req.method },
     (upRes) => {
+      const rewrite = rewriterFor(String(upRes.headers['content-type'] || ''));
+      if (rewrite === null) {
+        // Not a body we rewrite: relay headers as-is and stream, so a large
+        // response is never held in memory just because we inspected it.
+        res.writeHead(upRes.statusCode || 502, upRes.headers);
+        upRes.pipe(res);
+        return;
+      }
       const chunks = [];
       upRes.on('data', (c) => chunks.push(c));
       upRes.on('end', () => {
@@ -346,18 +376,14 @@ function handleJsAsset(req, res, url) {
         delete headers['content-length'];
         delete headers['content-encoding'];
         delete headers['transfer-encoding'];
-        let body = Buffer.concat(chunks);
-        const ctype = String(upRes.headers['content-type'] || '');
-        if (/javascript|ecmascript/i.test(ctype)) {
-          body = Buffer.from(patchClientJs(body.toString('utf8')), 'utf8');
-        }
+        const body = Buffer.from(rewrite(Buffer.concat(chunks).toString('utf8')), 'utf8');
         res.writeHead(upRes.statusCode || 502, headers);
         res.end(req.method === 'HEAD' ? undefined : body);
       });
     }
   );
   upstream.on('error', (err) => {
-    console.error('[proxy] js asset upstream error:', err.message);
+    console.error('[proxy] rewrite upstream error:', err.message);
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end('dsh unavailable');
