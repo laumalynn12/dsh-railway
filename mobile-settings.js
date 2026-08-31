@@ -56,17 +56,19 @@ ${S} > nav {
   box-shadow: 0 1px 0 var(--dsw-alias-border-l2);
   box-sizing: border-box;
 }
-/* Panel title ("Settings") pinned at the start of the bar. */
+/* Panel title ("Settings") is visually hidden on phones so the section
+   tabs own the whole bar. It cannot be display:none: the dialog names
+   itself through aria-labelledby pointing at this node, and a hidden
+   target strips the accessible name. This is the sr-only pattern (the
+   same one upstream uses for the close button's label) — the element
+   stays in the accessibility tree while taking no bar space. */
 ${S} > nav > div:first-child {
-  flex: 0 0 auto;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  font-size: 16px;
-  font-weight: 500;
-  padding: 0 12px 0 4px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
-  color: var(--dsw-alias-label-primary);
 }
 /* Section tabs (General / Models / Agent Presets / Plugins) scroll
    horizontally after the title. */
