@@ -21,7 +21,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # The repo pins pnpm via corepack (packageManager: pnpm@11.7.0 in package.json).
-RUN corepack enable
+# Activate that EXACT version as the global default explicitly (not by letting
+# corepack infer it from whichever directory happens to be cwd) — corepack's
+# cwd-based package.json lookup only kicks in from inside the repo checkout, and
+# a later RUN step (installing the ModSearch profile plugin) invokes pnpm from
+# outside it, which resolved to a newer default pnpm and pnpm's own
+# packageManager check then refused to run ("configured to use 11.7.0 ... your
+# current pnpm is v11.24.0"). Pinning explicitly up front avoids that entirely.
+RUN corepack enable \
+ && corepack prepare pnpm@11.7.0 --activate
 
 # Clone the pinned ref and build the repository artifacts (tsc + tsdown host/client
 # builds, web frontend build, etc. — see package.json "build" script). This is a
@@ -29,7 +37,6 @@ RUN corepack enable
 RUN git clone https://github.com/deepseek-ai/deepseek-harness.git /opt/deepseek-harness \
  && cd /opt/deepseek-harness \
  && git checkout "${DSH_GIT_REF}" \
- && corepack prepare --activate \
  && pnpm install --frozen-lockfile \
  && pnpm run build
 
