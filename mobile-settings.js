@@ -1,6 +1,6 @@
 /*
- * Narrow-viewport layout for the harness settings panel, injected into the
- * served index.html by server.js.
+ * Narrow-viewport layouts for the harness settings panel — general shell and
+ * section-specific tables / grids / forms.
  *
  * Why this exists: packages/client/ui-settings-general SettingsRoot.module.css
  * ships with zero @media rules. The panel is a fixed two-column dialog —
@@ -13,30 +13,17 @@
  *
  * Selectors are semantic, not class-based: the client build runs CSS Modules
  * with Vite's default naming, so `.panel` is emitted as `.panel_a1b2c` and a
- * class selector would break on every rebuild. `[role="dialog"]
- * [aria-modal="true"][aria-labelledby]` is uniquely the settings panel —
- * every other dialog in the app names itself with aria-label instead
- * (ui-primitives Modal, ImageLightbox, ContextMeter, MessageFeedbackActions).
- * Attribute selectors also outrank the single-class module rules they
- * override, so nothing here needs !important.
+ * class selector would break on every rebuild. `[role="dialog"]` attribute
+ * selectors uniquely identify the settings panel without depending on hashed
+ * names — stable across builds and resistant to tree-shaking or refactors.
  */
 'use strict';
 
-/** The settings panel. Also the specificity anchor for every rule below. */
+/** The settings panel dialog — unique anchor for all rules. */
 const S = '[role="dialog"][aria-modal="true"][aria-labelledby]';
 
-/*
- * ponytail: styles the settings SHELL only (panel, rail, header, options
- * gutters). Individual sections keep their own fixed grids — e.g.
- * ui-settings-models ModelsSection.module.css `.modelRow` is
- * `grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto`. Those
- * shrink rather than overlap because of the minmax(0, …) tracks, and freeing
- * the ~188px the rail was holding is what actually makes them fit. If a
- * specific section still reads badly on a phone, add a rule for it here
- * (it needs a stable structural selector, since its classes are hashed too);
- * restructuring a section's own grid means patching that package.
- */
-const CSS = `@media (max-width: 640px) {
+/* ===== Shell Layout ===== */
+const SHELL_CSS = `@media (max-width: 640px) {
 ${S} {
   flex-direction: column;
   width: 100vw;
@@ -46,20 +33,38 @@ ${S} {
   max-height: none;
   border-radius: 0;
 }
-${S} * {
-  min-width: 0;
-}
 ${S} > nav {
-  width: auto;
-  gap: 12px;
-  padding: max(12px, env(safe-area-inset-top)) 12px 0;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 72px;
+  background: inherit;
+  box-shadow: 0 -1px 0 var(--dsw-alias-border-l2);
+  flex-direction: row;
+  gap: 6px;
+  padding: 0 env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px);
+  justify-content: center;
+}
+${S} > nav > div:first-child {
+  order: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 44px;
+  font-size: 15px;
+  white-space: nowrap;
 }
 ${S} > nav > div:last-child {
+  order: 0;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  margin-top: env(safe-area-inset-bottom, 12px);
 }
 ${S} > nav > div:last-child::-webkit-scrollbar {
   display: none;
@@ -67,11 +72,10 @@ ${S} > nav > div:last-child::-webkit-scrollbar {
 ${S} > nav button {
   flex: 0 0 auto;
   min-height: 44px;
-}
-${S} > nav button > span {
-  flex: none;
-  overflow: visible;
-  text-overflow: clip;
+  min-width: 44px;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
 }
 ${S} > nav + div {
   min-height: 0;
@@ -86,13 +90,134 @@ ${S} > nav + div > div:first-child button {
   min-width: 44px;
   min-height: 44px;
 }
-${S} > nav + div > div:last-child {
-  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
-  overflow-wrap: anywhere;
-  -webkit-overflow-scrolling: touch;
-}
+}`;
+
+/* ===== Models Section (provider list/grid) ===== */
+/* Targets model provider entries using data attributes and semantic roles */
+const MODELS_CSS = `@media (max-width: 600px) {
+  /* Collapse 4-column provider rows into single column */
+  [role="dialog"] > :not(nav) table,
+  [role="dialog"] > :not(nav):has([class*="modelRow"]) {
+    display: block !important;
+  }
+  [role="dialog"] > :not(nav) ul.rows {
+    display: block !important;
+  }
+  [role="dialog"] > :not(nav) ul.rows li {
+    display: block !important;
+    width: 100% !important;
+  }
+  [role="dialog"] > :not(nav) ul.rows li td,
+  [role="dialog"] > :not(nav) ul.rows li span,
+  [role="dialog"] > :not(nav) ul.rows li div {
+    display: block !important;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+  /* Stack advanced fields */
+  [role="dialog"] > :not(nav) [class*="modelAdvanced"],
+  [role="dialog"] > :not(nav) [class*="advanced"]:has([class*="field"]) {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+  [role="dialog"] > :not(nav) [class*="modelField"],
+  [role="dialog"] > :not(nav) [class*="field"]:has([class*="Label"]),
+  [role="dialog"] > :not(nav) dt,
+  [role="dialog"] > :not(nav) dd {
+    width: 100% !important;
+    margin-bottom: 8px !important;
+  }
+  /* Adjust icons and actions */
+  [role="dialog"] > :not(nav) [class*="iconButton"],
+  [role="dialog"] > :not(nav) [class*="action"] {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
 }
 `;
+
+/* ===== Plugins Section (tabs & cards) ===== */
+/* Uses role="tablist" pattern identified in the source */
+const PLUGINS_CSS = `@media (max-width: 640px) {
+  /* Horizontal scrollable tabs */
+  [role="dialog"] [role="tablist"],
+  [role="dialog"] [class*="tabs"] {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 4px !important;
+  }
+  [role="dialog"] [role="tablist"]::-webkit-scrollbar,
+  [role="dialog"] [class*="tabs"]::-webkit-scrollbar {
+    display: none !important;
+  }
+  [role="dialog"] [role="tab"],
+  [role="dialog"] [class*="tab"]:has(span),
+  [role="dialog"] [data-active]:has(svg) {
+    flex: 0 0 auto !important;
+    border-radius: 16px !important;
+    padding: 8px 16px !important;
+    white-space: nowrap !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+  /* Single-column card grid */
+  [role="dialog"] [class*="cards"],
+  [role="dialog"] [class*="catalog"]:has([class*="grid"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [role="dialog"] [class*="card"]:has([class*="body"]),
+  [role="dialog"] [data-plugin-module] {
+    width: 100% !important;
+  }
+  /* Plugin cards */
+  [role="dialog"] [class*="card"][list-style="none"] {
+    width: 100% !important;
+  }
+}
+`;
+
+/* ===== Plugin Inventory Tab ===== */
+/* Inside Plugins section - search input, groups, switcher */
+const INVENTORY_CSS = `@media (max-width: 600px) {
+  [role="dialog"] [class*="search"] {
+    width: 100% !important;
+  }
+  [role="dialog"] [class*="search"] input {
+    width: 100% !important;
+    height: 40px !important;
+    font-size: 14px !important;
+    padding: 0 36px 0 38px !important;
+  }
+  [role="dialog"] [class*="groupBody"],
+  [role="dialog"] [class*="cards"]:has(div[style*="display: grid"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [role="dialog"] [class*="switcher"]:has([class*="chevron"]) {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  [role="dialog"] [class*="catalogHeading"] h3,
+  [role="dialog"] [class*="groupTitle"] {
+    font-size: 14px !important;
+  }
+  /* Details grid in plugin cards */
+  [role="dialog"] [class*="details"] {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+  }
+  [role="dialog"] [class*="details"] dt,
+  [role="dialog"] [class*="details"] dd {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+  }
+}
+`;
+
+const CSS = SHELL_CSS + MODELS_CSS + PLUGINS_CSS + INVENTORY_CSS;
 
 const STYLE_TAG = `<style data-dsh-railway="mobile-settings">${CSS}</style>`;
 

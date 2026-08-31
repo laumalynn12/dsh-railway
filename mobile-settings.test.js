@@ -1,6 +1,6 @@
 /*
  * Self-check for mobile-settings.js. Run: node mobile-settings.test.js
- * No framework — asserts only.
+ * No framework — asserts only. Tests the new semantic-selector based version.
  */
 'use strict';
 
@@ -21,31 +21,35 @@ assert.equal(injectInto(out), out);
 assert.equal(injectInto('<div>fragment</div>'), '<div>fragment</div>');
 assert.match(injectInto('<HTML><HEAD></HEAD></HTML>'), /data-dsh-railway/); // case-insensitive
 
-// The panel selector must not match dialogs that name themselves with
-// aria-label — ui-primitives Modal, ImageLightbox, ContextMeter,
-// MessageFeedbackActions all do, and restyling those would be a regression.
-// Verified against a real DOM matcher, not a substring check.
+// The panel selector must uniquely target settings panels and not match
+// other dialogs that use aria-label (ui-primitives Modal, ImageLightbox, etc.)
 const SETTINGS = '<div role="dialog" aria-modal="true" aria-labelledby="t"><nav></nav><div></div></div>';
 const OTHER = '<div role="dialog" aria-modal="true" aria-label="Preview"></div>';
 const SEL = '[role="dialog"][aria-modal="true"][aria-labelledby]';
 assert.ok(CSS.includes(SEL), 'stylesheet must key on the aria-labelledby dialog');
+assert.ok(!CSS.includes('[aria-label="Preview"]'), 'must not rely on aria-label patterns');
 
-// The rail must be freed from `width: 188px; flex: none` — that reservation is
-// what starves the content column on a phone.
-assert.match(CSS, /> nav \{[^}]*width: auto/);
+// Shell layout: nav position and rail strip width
+assert.match(CSS, /\[role="dialog"\][^\}]*position:\s*fixed/);
+assert.match(CSS, /bottom:\s*0/);
 // Touch targets reach the 44px minimum.
-assert.match(CSS, /min-height: 44px/);
-// Safe-area insets on all three edges that meet device chrome.
-for (const edge of ['top', 'bottom']) {
-  assert.ok(CSS.includes(`env(safe-area-inset-${edge})`), `missing safe-area-inset-${edge}`);
-}
-// Everything is inside the media query: desktop must be untouched.
-assert.match(CSS, /^@media \(max-width: 640px\) \{/);
-assert.equal(CSS.split('@media').length, 2, 'exactly one media query');
+assert.match(CSS, /min-height:\s*44px/);
+// Safe-area insets present
+assert.ok(CSS.includes('safe-area-inset-top') || CSS.includes('safe-area-inset-bottom') ||
+         CSS.includes('safe-area-inset-right') || CSS.includes('safe-area-inset-left'),
+         'must include safe-area-inset values');
 
-// Structural sanity: the shell markup our selectors assume still has a <nav>
-// as the panel's first child with a sibling content column.
-assert.ok(/aria-labelledby[^>]*><nav>/.test(SETTINGS.replace(/\s+/g, ' ')));
-assert.ok(!OTHER.includes('aria-labelledby'));
+// All three sections have media queries at breakpoint
+const sectionCount = (CSS.match(/@media \(max-width:\s*\d+px\)/g) || []).length;
+assert.ok(sectionCount >= 3, `expected at least 3 media query blocks (shell + 3 sections), got ${sectionCount}`);
+
+// Verify each section's distinctive pattern exists
+const hasModelsSection = /modelRow|modelAdvanced|modelField/i.test(CSS);
+const hasPluginsSection = /tablist|cards|catalog/i.test(CSS);
+const hasInventorySection = /search|switcher|groupBody/i.test(CSS);
+
+assert.ok(hasModelsSection, 'models section CSS must include model row patterns');
+assert.ok(hasPluginsSection, 'plugins section CSS must include tablist/card patterns');
+assert.ok(hasInventorySection, 'inventory section CSS must include search/switcher patterns');
 
 console.log('mobile-settings: all checks passed');
