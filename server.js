@@ -449,6 +449,17 @@ function handleRewrite(req, res, url) {
         delete headers['content-length'];
         delete headers['content-encoding'];
         delete headers['transfer-encoding'];
+        // We actively rewrite this body server-side; never let a browser cache it
+        // long-term. Upstream ships content-hashed filenames with
+        // Cache-Control: immutable — correct for THEIR unmodified bytes, wrong for
+        // OUR patched output, since two different deploys can produce the exact
+        // same hashed filename (no source change) while carrying a different
+        // proxy-side patch. A browser that cached the pre-patch bytes under that
+        // URL would then never re-request it, silently un-fixing the patch on the
+        // client from a server operator's point of view.
+        headers['cache-control'] = 'no-store';
+        delete headers['etag'];
+        delete headers['last-modified'];
         const body = Buffer.from(rewrite(Buffer.concat(chunks).toString('utf8')), 'utf8');
         res.writeHead(upRes.statusCode || 502, headers);
         res.end(req.method === 'HEAD' ? undefined : body);
