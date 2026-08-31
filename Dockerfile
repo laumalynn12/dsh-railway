@@ -21,15 +21,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # The repo pins pnpm via corepack (packageManager: pnpm@11.7.0 in package.json).
-# Activate that EXACT version as the global default explicitly (not by letting
-# corepack infer it from whichever directory happens to be cwd) — corepack's
-# cwd-based package.json lookup only kicks in from inside the repo checkout, and
-# a later RUN step (installing the ModSearch profile plugin) invokes pnpm from
-# outside it, which resolved to a newer default pnpm and pnpm's own
-# packageManager check then refused to run ("configured to use 11.7.0 ... your
-# current pnpm is v11.24.0"). Pinning explicitly up front avoids that entirely.
-RUN corepack enable \
- && corepack prepare pnpm@11.7.0 --activate
+# Install that EXACT version globally via npm rather than `corepack prepare
+# --activate`: corepack stores its "activated version" state under $HOME, and
+# this Dockerfile changes $HOME twice more below (once for the ModSearch
+# profile staging dir, once for the runtime /data volume) — each change made
+# corepack lose track of the pinned version and silently fall back to a
+# different default, which then failed pnpm's own packageManager version
+# check ("configured to use 11.7.0 ... your current pnpm is v11.24.0"). A
+# plain global npm install has no such dependency on $HOME.
+RUN npm install -g --no-audit --no-fund pnpm@11.7.0
 
 # Clone the pinned ref and build the repository artifacts (tsc + tsdown host/client
 # builds, web frontend build, etc. — see package.json "build" script). This is a
