@@ -352,18 +352,49 @@ proxy.on('proxyReq', (proxyReq, req) => {
 // already sent headers by the time we could modify anything.
 let loopbackPatchLogged = false;
 
+// Finds `isLoopbackHostname` under any of its common declaration shapes and
+// replaces its ENTIRE body with `return true;` — brace-matched, not regex-matched,
+// so it doesn't care how complex the real check is internally (source builds
+// validate the whole 127.0.0.0/8 range, not just a literal "localhost"/"[::1]"
+// compare, and aren't minified into a one-line inline condition the way the npm
+// package's bundle was — see deepseek-ai/deepseek-harness#900 for the source
+// reference). Matching the function by NAME instead of by its internal logic
+// means this keeps working even if that internal logic changes again upstream.
+function neutralizeLoopbackCheck(body) {
+  const declRe = /(function\s+isLoopbackHostname\s*\([^)]*\)\s*\{|(?:const|let|var)\s+isLoopbackHostname\s*=\s*(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{|\bisLoopbackHostname\s*[:(][^)]*\)?\s*(?:=>\s*)?\{)/g;
+  let out = body;
+  let changed = false;
+  let match;
+  while ((match = declRe.exec(out)) !== null) {
+    const braceStart = match.index + match[0].length - 1;
+    let depth = 1;
+    let i = braceStart + 1;
+    for (; i < out.length && depth > 0; i++) {
+      if (out[i] === '{') depth++;
+      else if (out[i] === '}') depth--;
+    }
+    if (depth !== 0) break; // unbalanced — bail rather than risk corrupting the bundle
+    const bodyStart = braceStart + 1;
+    const replacement = 'return true;';
+    out = out.slice(0, bodyStart) + replacement + out.slice(i - 1);
+    changed = true;
+    declRe.lastIndex = bodyStart + replacement.length;
+  }
+  return { out, changed };
+}
+
 function patchClientJs(body) {
-  // The minified gate always reads: if(<arg>==="localhost"||<arg>==="[::1]")return!0
-  // (either comparison order). Rewrite the condition to a constant true so the
-  // function returns true for every hostname.
-  const re = /if\s*\(\s*([\w$]+)\s*={2,3}\s*(?:"localhost"|'localhost')\s*\|\|\s*\1\s*={2,3}\s*(?:"\[::1\]"|'\[::1\]')\s*\)|if\s*\(\s*(?:"\[::1\]"|'\[::1\]')\s*={2,3}\s*([\w$]+)\s*\|\|\s*(?:"localhost"|'localhost')\s*={2,3}\s*\2\s*\)/g;
-  const patched = body.replace(re, 'if(!0)');
-  // Log only the first bundle that actually carries the gate. Logging the first
-  // .js request instead reports "not found" for whichever asset happens to be
-  // fetched first, which says nothing about whether the patch works.
-  if (patched !== body && !loopbackPatchLogged) {
+  // Old minified npm-package shape, kept as a fallback in case a released
+  // package bundle is ever mixed in: if(<arg>==="localhost"||<arg>==="[::1]")return!0
+  const inlineRe = /if\s*\(\s*([\w$]+)\s*={2,3}\s*(?:"localhost"|'localhost')\s*\|\|\s*\1\s*={2,3}\s*(?:"\[::1\]"|'\[::1\]')\s*\)|if\s*\(\s*(?:"\[::1\]"|'\[::1\]')\s*={2,3}\s*([\w$]+)\s*\|\|\s*(?:"localhost"|'localhost')\s*={2,3}\s*\2\s*\)/g;
+
+  const { out, changed: fnChanged } = neutralizeLoopbackCheck(body);
+  const patched = out.replace(inlineRe, 'if(!0)');
+  const anyChanged = fnChanged || patched !== out;
+
+  if (anyChanged && !loopbackPatchLogged) {
     loopbackPatchLogged = true;
-    console.log('[proxy] client JS loopback-gate patch: applied');
+    console.log(`[proxy] client JS loopback-gate patch: applied (fn-body=${fnChanged}, inline=${patched !== out})`);
   }
   return patched;
 }
