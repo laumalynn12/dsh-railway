@@ -50,8 +50,38 @@ let dshChild = null;
 let dshBackoffMs = 1000;
 let shuttingDown = false;
 
+// Source builds of dsh (git checkout, not the npm package) print a one-time launch
+// token in their startup URL — http://127.0.0.1:3080/?token=... — and require that
+// exact URL be visited once to exchange the token for a session cookie before any
+// other request is accepted (see docs: "Source Web builds exchange the printed
+// token launch URL for a browser session"). The npm-published package has no such
+// requirement, which is why this was invisible before switching to a source build.
+// We exchange it ourselves, server-side, and attach the resulting cookie to every
+// request/WS upgrade we forward — the browser never needs to see this cookie or
+// the token; our own ADMIN_PASSWORD login is what gates the browser.
+let dshUpstreamCookie = null;
+
+function exchangeDshToken(token) {
+  const req = http.request(
+    { host: DSH_HOST, port: DSH_PORT, path: `/?token=${encodeURIComponent(token)}`, method: 'GET' },
+    (upRes) => {
+      const setCookie = upRes.headers['set-cookie'];
+      if (setCookie && setCookie.length) {
+        dshUpstreamCookie = setCookie.map((c) => c.split(';')[0]).join('; ');
+        console.log('[proxy] exchanged dsh launch token for an upstream session cookie');
+      } else {
+        console.error(`[proxy] token exchange got HTTP ${upRes.statusCode} with no Set-Cookie — dsh auth not established`);
+      }
+      upRes.resume(); // drain so the socket can close/reuse
+    }
+  );
+  req.on('error', (err) => console.error('[proxy] dsh token exchange failed:', err.message));
+  req.end();
+}
+
 function startDsh() {
   if (shuttingDown) return;
+  dshUpstreamCookie = null; // each dsh process prints a fresh token; drop any stale cookie
   const args = ['web', '--no-open', '--host', DSH_HOST, '--port', String(DSH_PORT)];
 
   // dsh's /api browser-trust fence refuses any Host that is not loopback or in its
@@ -85,6 +115,9 @@ function startDsh() {
         const line = buf.slice(0, idx);
         buf = buf.slice(idx + 1);
         console.log(`[dsh] ${line}`);
+        // Source builds only: "http://127.0.0.1:3080/?token=XXXX" printed on startup.
+        const m = line.match(/\?token=([A-Za-z0-9_-]+)/);
+        if (m && !dshUpstreamCookie) exchangeDshToken(m[1]);
       }
       if (buf.length > 8192) buf = ''; // drop runaway partial line
     });
@@ -293,9 +326,16 @@ const server = http.createServer({
 // never matches. Strip Origin/SecFetchSite before forwarding so the fence treats
 // these as non-browser requests: Host (loopback) passes and absent Origin is
 // explicitly allowed by api-request-trust.ts.
-proxy.on('proxyReq', (proxyReq) => {
+proxy.on('proxyReq', (proxyReq, req) => {
   proxyReq.removeHeader('origin');
   proxyReq.removeHeader('sec-fetch-site');
+  // Source-build auth (see exchangeDshToken above): attach our server-held upstream
+  // session cookie so dsh accepts the request. Merged with whatever cookie the
+  // browser sent (our unrelated dsh_session proxy-auth cookie) rather than replacing it.
+  if (dshUpstreamCookie) {
+    const existing = req.headers.cookie;
+    proxyReq.setHeader('cookie', existing ? `${existing}; ${dshUpstreamCookie}` : dshUpstreamCookie);
+  }
 });
 
 // ── client-bundle neutralization ─────────────────────────────────────────────
@@ -358,8 +398,10 @@ function rewriterFor(ctype) {
 function handleRewrite(req, res, url) {
   if (!mayRewrite(req, url)) return false;
 
+  const upstreamHeaders = {};
+  if (dshUpstreamCookie) upstreamHeaders.cookie = dshUpstreamCookie;
   const upstream = http.request(
-    { host: DSH_HOST, port: DSH_PORT, path: url.pathname + url.search, method: req.method },
+    { host: DSH_HOST, port: DSH_PORT, path: url.pathname + url.search, method: req.method, headers: upstreamHeaders },
     (upRes) => {
       const rewrite = rewriterFor(String(upRes.headers['content-type'] || ''));
       if (rewrite === null) {
@@ -411,6 +453,9 @@ server.on('upgrade', (req, socket, head) => {
   // safe: we own this socket, nobody reads these headers afterwards.
   delete req.headers.origin;
   delete req.headers['sec-fetch-site'];
+  if (dshUpstreamCookie) {
+    req.headers.cookie = req.headers.cookie ? `${req.headers.cookie}; ${dshUpstreamCookie}` : dshUpstreamCookie;
+  }
 
   proxy.ws(req, socket, head);
 });
