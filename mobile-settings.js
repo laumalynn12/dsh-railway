@@ -128,31 +128,103 @@ ${S} > nav + div > div:last-child {
 }`;
 
 /* ===== Models Section (provider list/grid) ===== */
-/* Hashed class fragments only: "modelRow"/"modelAdvanced"/"modelField" survive
-   Vite's naming as prefix_before_hash, so [class*=] matches every rebuild. */
+/* Provider rows are <ul.rows > <li.rowCard>. Each rowCard has:
+ *   - .rowHead: contains .rowIdentity (displayName, credential dots) +
+ *                .rowActions (edit button, remove button)
+ * Model lists (inside providers) use .modelRow which is a 4-column grid:
+ *   model-id | model-name | chevron | delete
+ * We preserve horizontal layouts while making controls touch-friendly. */
 const MODELS_CSS = `@media (max-width: 600px) {
-  /* Collapse the 4-column provider row into a stacked block */
-  [role="dialog"] [class*="modelRow"] {
-    grid-template-columns: minmax(0, 1fr) !important;
+  /* =========================
+     Provider rows (.rowCard)
+     =========================
+     Desktop: name | credential | edit | delete (horizontal)
+     Mobile:  Keep horizontal but wrap if needed; actions at bottom or side
+   */
+  [role="dialog"] .rows {
+    display: block !important;
   }
-  /* Stack the advanced-fields auto-fit grid */
-  [role="dialog"] [class*="modelAdvanced"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-  [role="dialog"] [class*="modelField"] {
+  [role="dialog"] .rowCard {
     width: 100% !important;
+    max-width: none !important;
+    margin-bottom: 12px !important;
   }
-  /* Long provider names and credential references wrap instead of clipping */
-  [role="dialog"] [class*="modelRow"] input,
-  [role="dialog"] [class*="modelField"] input,
-  [role="dialog"] [class*="modelField"] select {
-    width: 100% !important;
-    box-sizing: border-box !important;
+  [role="dialog"] .rowHead {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
   }
-  /* Icon buttons become real touch targets */
-  [role="dialog"] [class*="iconButton"] {
+  [role="dialog"] .rowIdentity {
+    flex: none;
+    width: 100%;
+    font-size: 14px;
+  }
+  [role="dialog"] .rowActions {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  [role="dialog"] .rowActions button {
     min-width: 44px !important;
     min-height: 44px !important;
+    padding: 0 12px !important;
+    border-radius: 8px !important;
+  }
+  [role="dialog"] .rowName {
+    overflow-wrap: break-word !important;
+  }
+
+  /* =========================
+     Model list rows (.modelRow)
+     =========================
+     Desktop: 4-col grid — id | name | chevron | delete
+     Mobile:  Compress to inline layout with ellipsis for long values;
+             icon buttons grow to 44px targets
+   */
+  [role="dialog"] [class*="modelRow"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 8px 12px !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+  /* First two columns (id, name) share remaining space, last two icons fixed */
+  [role="dialog"] [class*="modelRow"] > * {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  [role="dialog"] [class*="modelRow"] > *:last-child,
+  [role="dialog"] [class*="modelRow"] > *:nth-last-child(2) {
+    flex: 0 0 auto;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+  }
+  /* Icon buttons inside modelRow become touch targets */
+  [role="dialog"] [class*="modelRow"] .iconButton {
+    all: unset !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+  }
+  /* Long model names/id get ellipsis */
+  [role="dialog"] [class*="modelRow"] input,
+  [role="dialog"] [class*="modelRow"] select,
+  [role="dialog"] [class*="modelRow"] span:first-child {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 1fr !important;
   }
 }
 `;
