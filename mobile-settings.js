@@ -22,8 +22,12 @@
 /** The settings panel dialog — unique anchor for all rules. */
 const S = '[role="dialog"][aria-modal="true"][aria-labelledby]';
 
-/* ===== Shell Layout ===== */
-const SHELL_CSS = `@media (max-width: 640px) {
+/* ===== Shell Layout (Top Bar Navigation) ===== */
+/* Changes from 2-column (nav rail + content) to single-column layout with
+   a horizontal top bar. Structural selectors only: the panel is
+   dialog > (nav, div) where the div holds (header, options); hashed
+   CSS-Module class names are never referenced. */
+const SHELL_CSS = `@media (max-width: 768px) {
 ${S} {
   flex-direction: column;
   width: 100vw;
@@ -33,38 +37,49 @@ ${S} {
   max-height: none;
   border-radius: 0;
 }
+/* Horizontal top bar: nav becomes the first row, sticky so it stays
+   visible while the options column scrolls beneath it. */
 ${S} > nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  height: 72px;
-  background: inherit;
-  box-shadow: 0 -1px 0 var(--dsw-alias-border-l2);
+  order: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
   flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: 6px;
-  padding: 0 env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px);
-  justify-content: center;
+  width: 100%;
+  flex: none;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 1px 0 var(--dsw-alias-border-l2);
+  box-sizing: border-box;
 }
+/* Panel title ("Settings") pinned at the start of the bar. */
 ${S} > nav > div:first-child {
-  order: 1;
+  flex: 0 0 auto;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  min-height: 44px;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 500;
+  padding: 0 12px 0 4px;
   white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
 }
+/* Section tabs (General / Models / Agent Presets / Plugins) scroll
+   horizontally after the title. */
 ${S} > nav > div:last-child {
-  order: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   flex-direction: row;
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  margin-top: env(safe-area-inset-bottom, 12px);
+  align-items: center;
 }
 ${S} > nav > div:last-child::-webkit-scrollbar {
   display: none;
@@ -72,17 +87,28 @@ ${S} > nav > div:last-child::-webkit-scrollbar {
 ${S} > nav button {
   flex: 0 0 auto;
   min-height: 44px;
-  min-width: 44px;
   padding: 8px 12px;
   border-radius: 20px;
   font-size: 13px;
 }
+${S} > nav button > span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+/* Content column: everything below the bar. Header row (actions + close)
+   stays visible; options take the remaining height and scroll. */
 ${S} > nav + div {
+  order: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 ${S} > nav + div > div:first-child {
+  flex: none;
   height: auto;
-  min-height: 48px;
+  min-height: 52px;
   align-items: center;
   padding: 8px 12px;
 }
@@ -90,47 +116,39 @@ ${S} > nav + div > div:first-child button {
   min-width: 44px;
   min-height: 44px;
 }
+${S} > nav + div > div:last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  overflow-wrap: anywhere;
+  -webkit-overflow-scrolling: touch;
+}
 }`;
 
 /* ===== Models Section (provider list/grid) ===== */
-/* Targets model provider entries using data attributes and semantic roles */
+/* Hashed class fragments only: "modelRow"/"modelAdvanced"/"modelField" survive
+   Vite's naming as prefix_before_hash, so [class*=] matches every rebuild. */
 const MODELS_CSS = `@media (max-width: 600px) {
-  /* Collapse 4-column provider rows into single column */
-  [role="dialog"] > :not(nav) table,
-  [role="dialog"] > :not(nav):has([class*="modelRow"]) {
-    display: block !important;
+  /* Collapse the 4-column provider row into a stacked block */
+  [role="dialog"] [class*="modelRow"] {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
-  [role="dialog"] > :not(nav) ul.rows {
-    display: block !important;
+  /* Stack the advanced-fields auto-fit grid */
+  [role="dialog"] [class*="modelAdvanced"] {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
-  [role="dialog"] > :not(nav) ul.rows li {
-    display: block !important;
+  [role="dialog"] [class*="modelField"] {
     width: 100% !important;
   }
-  [role="dialog"] > :not(nav) ul.rows li td,
-  [role="dialog"] > :not(nav) ul.rows li span,
-  [role="dialog"] > :not(nav) ul.rows li div {
-    display: block !important;
+  /* Long provider names and credential references wrap instead of clipping */
+  [role="dialog"] [class*="modelRow"] input,
+  [role="dialog"] [class*="modelField"] input,
+  [role="dialog"] [class*="modelField"] select {
     width: 100% !important;
-    box-sizing: border-box;
+    box-sizing: border-box !important;
   }
-  /* Stack advanced fields */
-  [role="dialog"] > :not(nav) [class*="modelAdvanced"],
-  [role="dialog"] > :not(nav) [class*="advanced"]:has([class*="field"]) {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-  }
-  [role="dialog"] > :not(nav) [class*="modelField"],
-  [role="dialog"] > :not(nav) [class*="field"]:has([class*="Label"]),
-  [role="dialog"] > :not(nav) dt,
-  [role="dialog"] > :not(nav) dd {
-    width: 100% !important;
-    margin-bottom: 8px !important;
-  }
-  /* Adjust icons and actions */
-  [role="dialog"] > :not(nav) [class*="iconButton"],
-  [role="dialog"] > :not(nav) [class*="action"] {
+  /* Icon buttons become real touch targets */
+  [role="dialog"] [class*="iconButton"] {
     min-width: 44px !important;
     min-height: 44px !important;
   }
@@ -138,18 +156,20 @@ const MODELS_CSS = `@media (max-width: 600px) {
 `;
 
 /* ===== Plugins Section (tabs & cards) ===== */
-/* Uses role="tablist" pattern identified in the source */
-const PLUGINS_CSS = `@media (max-width: 640px) {
-  /* Horizontal scrollable tabs */
+/* Uses role="tablist" pattern identified in the source; hashed fragments
+   like "card", "cards", "catalog" survive the module build. */
+const PLUGINS_CSS = `@media (max-width: 768px) {
+  /* Inner sub-tabs inside the content stay horizontally scrollable pills */
   [role="dialog"] [role="tablist"],
   [role="dialog"] [class*="tabs"] {
     display: flex !important;
     flex-direction: row !important;
-    gap: 6px;
+    gap: 6px !important;
     overflow-x: auto !important;
     scrollbar-width: none !important;
     -webkit-overflow-scrolling: touch !important;
     padding-bottom: 4px !important;
+    width: 100% !important;
   }
   [role="dialog"] [role="tablist"]::-webkit-scrollbar,
   [role="dialog"] [class*="tabs"]::-webkit-scrollbar {
@@ -165,7 +185,7 @@ const PLUGINS_CSS = `@media (max-width: 640px) {
     min-width: 44px !important;
     min-height: 44px !important;
   }
-  /* Single-column card grid */
+  /* Single-column card grid for plugin and inventory sections */
   [role="dialog"] [class*="cards"],
   [role="dialog"] [class*="catalog"]:has([class*="grid"]) {
     grid-template-columns: minmax(0, 1fr) !important;
@@ -174,8 +194,9 @@ const PLUGINS_CSS = `@media (max-width: 640px) {
   [role="dialog"] [data-plugin-module] {
     width: 100% !important;
   }
-  /* Plugin cards */
-  [role="dialog"] [class*="card"][list-style="none"] {
+  /* List-style plugins (generic card lists) fill the full column */
+  [role="dialog"] ul,
+  [role="dialog"] > div[class*="card"][role="button"] {
     width: 100% !important;
   }
 }

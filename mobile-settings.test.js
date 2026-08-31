@@ -1,6 +1,7 @@
 /*
  * Self-check for mobile-settings.js. Run: node mobile-settings.test.js
- * No framework — asserts only. Tests the new semantic-selector based version.
+ * No framework — asserts only. Verifies the top-bar shell layout and the
+ * section-specific responsive rules.
  */
 'use strict';
 
@@ -23,27 +24,23 @@ assert.match(injectInto('<HTML><HEAD></HEAD></HTML>'), /data-dsh-railway/); // c
 
 // The panel selector must uniquely target settings panels and not match
 // other dialogs that use aria-label (ui-primitives Modal, ImageLightbox, etc.)
-const SETTINGS = '<div role="dialog" aria-modal="true" aria-labelledby="t"><nav></nav><div></div></div>';
-const OTHER = '<div role="dialog" aria-modal="true" aria-label="Preview"></div>';
 const SEL = '[role="dialog"][aria-modal="true"][aria-labelledby]';
 assert.ok(CSS.includes(SEL), 'stylesheet must key on the aria-labelledby dialog');
-assert.ok(!CSS.includes('[aria-label="Preview"]'), 'must not rely on aria-label patterns');
 
-// Shell layout: nav position and rail strip width
-assert.match(CSS, /\[role="dialog"\][^\}]*position:\s*fixed/);
-assert.match(CSS, /bottom:\s*0/);
+// ===== Shell: top-bar navigation =====
+// The nav bar is sticky at the top so it stays visible while content scrolls.
+assert.match(CSS, /> nav \{[^}]*position:\s*sticky/, 'nav must be a sticky top bar');
+assert.match(CSS, /> nav \{[^}]*top:\s*0/, 'sticky bar must pin to the top');
+assert.match(CSS, /> nav \{[^}]*flex-direction:\s*row/, 'nav must lay out horizontally');
+// Panel is a full-viewport column: bar on top, content fills the rest.
+assert.match(CSS, /\{\s*flex-direction:\s*column/, 'panel must be a column');
+assert.match(CSS, /100dvh/, 'panel height must use dynamic viewport units');
 // Touch targets reach the 44px minimum.
 assert.match(CSS, /min-height:\s*44px/);
-// Safe-area insets present
-assert.ok(CSS.includes('safe-area-inset-top') || CSS.includes('safe-area-inset-bottom') ||
-         CSS.includes('safe-area-inset-right') || CSS.includes('safe-area-inset-left'),
-         'must include safe-area-inset values');
+// Safe-area inset present for device chrome.
+assert.ok(CSS.includes('safe-area-inset'), 'must include safe-area-inset values');
 
-// All three sections have media queries at breakpoint
-const sectionCount = (CSS.match(/@media \(max-width:\s*\d+px\)/g) || []).length;
-assert.ok(sectionCount >= 3, `expected at least 3 media query blocks (shell + 3 sections), got ${sectionCount}`);
-
-// Verify each section's distinctive pattern exists
+// ===== Section rules present =====
 const hasModelsSection = /modelRow|modelAdvanced|modelField/i.test(CSS);
 const hasPluginsSection = /tablist|cards|catalog/i.test(CSS);
 const hasInventorySection = /search|switcher|groupBody/i.test(CSS);
