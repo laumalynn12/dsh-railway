@@ -338,69 +338,54 @@ proxy.on('proxyReq', (proxyReq, req) => {
   }
 });
 
-// ── client-bundle neutralization ─────────────────────────────────────────────
-// Upstream gates its settings UI on the BROWSER's own hostname being loopback
-// (ui-settings/settings-mirror.ts: persistence = connection.isLoopback ? 'host'
-// : 'memory'). Served over the public Railway domain that gate is false, the
-// settings mirror never issues a single request, and Models shows "settings are
-// unavailable in this browser". Neutralize it by rewriting the isLoopbackHostname
-// condition out of the served JS bundles.
+// ── loopback host declaration via transport hook ───────────────────────────
+// Upstream gates its settings UI on window.location.hostname being loopback.
+// On Railway, the public domain is non-loopback, which causes ui-settings
+// settings-mirror.ts to use 'memory' persistence instead of 'host'. When
+// memory mode, the mirror.load() early-exits immediately and never fetches
+// settings, leaving Models stuck showing "settings are unavailable in this
+// browser" (store.ts line 190).
 //
-// Implementation note: this is done by handling .js requests manually (buffered
-// fetch from dsh, patch, respond) rather than through http-proxy's proxyRes
-// event — the proxy pipes bytes straight through, so its response stream has
-// already sent headers by the time we could modify anything.
-let loopbackPatchLogged = false;
+// Fix: Inject window.__DSH_TRANSPORT__.ownsHost = true into index.html. The
+// connection client (connection/src/client/index.ts line 228) evaluates
+//   isLoopback: transport?.ownsHost === true || ...
+// This takes precedence over the hostname check, so the settings mirror
+// uses 'host' persistence and successfully loads settings across the public
+// Railway domain. Injection happens once per index document, far earlier than
+// any bundled module, making it immune to minification and tree-shaking that
+// would break regex-based bundle patches.
+//
+// The inline script that declares this page as owning the Host. It runs as a
+// classic (parser-blocking) script in <head>, ahead of every module script in
+// the document, so by the time the bundled connection plugin reads
+// globalThis.__DSH_TRANSPORT__, ownsHost is already true. `??=` keeps this
+// idempotent if a future dsh build injects its own transport hooks (the
+// worker preview does exactly that): we only set the flag, never the fetch/
+// openStream members — providing those here would break the real HTTP carrier.
+const OWNS_HOST_SCRIPT = [
+  '<script data-dsh-railway="owns-host">',
+  '(function () {',
+  '  var t = globalThis.__DSH_TRANSPORT__ ??= {};',
+  '  t.ownsHost = true;',
+  '})();',
+  '</script>',
+].join('');
 
-// Finds `isLoopbackHostname` under any of its common declaration shapes and
-// replaces its ENTIRE body with `return true;` — brace-matched, not regex-matched,
-// so it doesn't care how complex the real check is internally (source builds
-// validate the whole 127.0.0.0/8 range, not just a literal "localhost"/"[::1]"
-// compare, and aren't minified into a one-line inline condition the way the npm
-// package's bundle was — see deepseek-ai/deepseek-harness#900 for the source
-// reference). Matching the function by NAME instead of by its internal logic
-// means this keeps working even if that internal logic changes again upstream.
-function neutralizeLoopbackCheck(body) {
-  const declRe = /(function\s+isLoopbackHostname\s*\([^)]*\)\s*\{|(?:const|let|var)\s+isLoopbackHostname\s*=\s*(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{|\bisLoopbackHostname\s*[:(][^)]*\)?\s*(?:=>\s*)?\{)/g;
-  let out = body;
-  let changed = false;
-  let match;
-  while ((match = declRe.exec(out)) !== null) {
-    const braceStart = match.index + match[0].length - 1;
-    let depth = 1;
-    let i = braceStart + 1;
-    for (; i < out.length && depth > 0; i++) {
-      if (out[i] === '{') depth++;
-      else if (out[i] === '}') depth--;
-    }
-    if (depth !== 0) break; // unbalanced — bail rather than risk corrupting the bundle
-    const bodyStart = braceStart + 1;
-    const replacement = 'return true;';
-    out = out.slice(0, bodyStart) + replacement + out.slice(i - 1);
-    changed = true;
-    declRe.lastIndex = bodyStart + replacement.length;
-  }
-  return { out, changed };
-}
-
-function patchClientJs(body) {
-  // Old minified npm-package shape, kept as a fallback in case a released
-  // package bundle is ever mixed in: if(<arg>==="localhost"||<arg>==="[::1]")return!0
-  const inlineRe = /if\s*\(\s*([\w$]+)\s*={2,3}\s*(?:"localhost"|'localhost')\s*\|\|\s*\1\s*={2,3}\s*(?:"\[::1\]"|'\[::1\]')\s*\)|if\s*\(\s*(?:"\[::1\]"|'\[::1\]')\s*={2,3}\s*([\w$]+)\s*\|\|\s*(?:"localhost"|'localhost')\s*={2,3}\s*\2\s*\)/g;
-
-  const { out, changed: fnChanged } = neutralizeLoopbackCheck(body);
-  const patched = out.replace(inlineRe, 'if(!0)');
-  const anyChanged = fnChanged || patched !== out;
-
-  if (anyChanged && !loopbackPatchLogged) {
-    loopbackPatchLogged = true;
-    console.log(`[proxy] client JS loopback-gate patch: applied (fn-body=${fnChanged}, inline=${patched !== out})`);
-  }
-  return patched;
-}
-
-function isJsAssetPath(pathname) {
-  return pathname.endsWith('.js') || pathname.endsWith('.mjs');
+/**
+ * Splice the ownsHost declaration into the served index.html. Idempotent:
+ * a document already carrying the marker is returned unchanged, so re-proxied
+ * or double-rendered documents never stack duplicate scripts. A document with
+ * no <head> is passed through untouched — dsh always serves one, and silently
+ * mangling an unexpected response is worse than shipping it unchanged.
+ * @param html - the upstream index.html body.
+ * @returns the html with the ownsHost script injected.
+ */
+function injectOwnsHost(html) {
+  if (html.includes('data-dsh-railway="owns-host"')) return html;
+  const at = html.toLowerCase().lastIndexOf('</head>');
+  if (at < 0) return html;
+  console.log('[proxy] ownsHost transport hook injected into index.html');
+  return html.slice(0, at) + OWNS_HOST_SCRIPT + html.slice(at);
 }
 
 // A document navigation, not an in-page fetch: only the browser's top-level
@@ -413,15 +398,23 @@ function isDocumentRequest(req) {
 // Candidates for body rewriting. The request only makes us *look*; the
 // response content-type below decides whether we actually buffer, so a
 // navigation that turns out to serve a large download still streams through.
+// Only HTML documents are rewritten: JS assets stream through untouched, since
+// the ownsHost fix lives in the document, not the bundles.
 function mayRewrite(req, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
-  return isJsAssetPath(url.pathname) || isDocumentRequest(req);
+  return isDocumentRequest(req);
+}
+
+// Both document rewrites, applied in order: the ownsHost transport hook (the
+// settings-mirror fix — must land before any bundle executes, which the head
+// position guarantees) and the mobile-settings stylesheet.
+function patchDocument(html) {
+  return mobileSettings.injectInto(injectOwnsHost(html));
 }
 
 // Pick the rewrite for a response content-type, or null to stream it untouched.
 function rewriterFor(ctype) {
-  if (/javascript|ecmascript/i.test(ctype)) return patchClientJs;
-  if (/text\/html/i.test(ctype)) return mobileSettings.injectInto;
+  if (/text\/html/i.test(ctype)) return patchDocument;
   return null;
 }
 
