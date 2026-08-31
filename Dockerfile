@@ -1,23 +1,44 @@
-# Which @deepseek-ai/dsh version to install. Any published npm version or tag works.
-# Override at deploy time with the DSH_VERSION service variable (build arg) — no code change.
-ARG DSH_VERSION=0.1.1-rc.2
+# Which git ref of deepseek-ai/deepseek-harness to build. Any branch, tag, or
+# full commit SHA works. Override at deploy time with the DSH_GIT_REF service
+# variable (build arg) — no code change. Pin a commit SHA for anything long-lived;
+# this is a developer-preview monorepo and master can carry breaking changes
+# between your builds.
+ARG DSH_GIT_REF=master
 
 FROM node:22-slim
-ARG DSH_VERSION
-ENV DSH_VERSION=${DSH_VERSION}
+ARG DSH_GIT_REF
+ENV DSH_GIT_REF=${DSH_GIT_REF}
 
 # tini = PID 1. dsh spawns tool subprocesses (bash, git, ...) that reparent and pile up
 # as zombies without an init; after weeks of uptime that exhausts the PID table.
-# No node-gyp toolchain: the only profile plugin (modsearch) is pure JS. Adding a
-# plugin with native addons (node-pty, cpu-features, ssh2) means restoring
-# python3 make g++ here.
+#
+# git/python3/make/g++ are here for the SOURCE BUILD (pnpm install compiles the
+# repo's native/landlock-run workspace member and any other native deps), not for
+# the earlier no-node-gyp reasoning that applied to the npm-install path — building
+# from source is heavier than installing the published package.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tini ca-certificates \
+ && apt-get install -y --no-install-recommends tini ca-certificates git python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
 
-# Install the pinned release globally so it survives volume mounts and is on PATH.
-# pnpm is required by `dsh plugin` — profile plugins are managed as a pnpm project.
-RUN npm install -g --no-audit --no-fund "pnpm@9" "@deepseek-ai/dsh@${DSH_VERSION}"
+# The repo pins pnpm via corepack (packageManager: pnpm@11.7.0 in package.json).
+RUN corepack enable
+
+# Clone the pinned ref and build the repository artifacts (tsc + tsdown host/client
+# builds, web frontend build, etc. — see package.json "build" script). This is a
+# full monorepo build, noticeably slower than `npm install -g @deepseek-ai/dsh`.
+RUN git clone https://github.com/deepseek-ai/deepseek-harness.git /opt/deepseek-harness \
+ && cd /opt/deepseek-harness \
+ && git checkout "${DSH_GIT_REF}" \
+ && corepack prepare --activate \
+ && pnpm install --frozen-lockfile \
+ && pnpm run build
+
+# There is no global `dsh` binary from a source checkout — the repo's own
+# instructions run it as `pnpm dsh <args>` from inside the checkout. server.js
+# spawns the child as a bare `dsh`, so provide a wrapper on PATH that forwards
+# into the checkout unchanged, rather than touching server.js.
+RUN printf '#!/bin/sh\nexec pnpm --dir /opt/deepseek-harness dsh "$@"\n' > /usr/local/bin/dsh \
+ && chmod +x /usr/local/bin/dsh
 
 # Pre-install ModSearch into the web profile at build time so EVERY deployment gets
 # it by default: the plugin registers modsearch's engine chain as the web seam's
@@ -35,7 +56,7 @@ ENV DSH_HOME=/opt/dsh-defaults/.dsh \
 # Only add profile plugins that declare NO @deepseek-ai/* dependency.
 # Third-party plugins pin harness internals with caret ranges on prereleases
 # (^0.1.0-rc.6), and a caret range over a prerelease does not match a newer
-# prerelease (0.1.1-rc.2) — so pnpm installs a SECOND, older copy of harness
+# prerelease/source build — so pnpm installs a SECOND, older copy of harness
 # internals into the profile, which shadows the runtime the `dsh` CLI loads.
 # An older dsh-host-webserver has no renderIndex(), so the SPA document route
 # throws and every page load answers a bare 400 with an empty body.
